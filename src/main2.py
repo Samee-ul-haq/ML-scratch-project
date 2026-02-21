@@ -1,42 +1,87 @@
-# ------------Building from scratch Using Pytorch and MATPLOTLIB -------------
-import torch
+# ------------ Building from scratch Using Pytorch and MATPLOTLIB -------------
+import pandas as pd
 import matplotlib.pyplot as plt
-from torch.utils.data import TensorDataset,DataLoader
+import numpy as np
+import seaborn as sns
+from sklearn.datasets import load_diabetes
 
+dataset=load_diabetes()
+df=pd.DataFrame(dataset.data,columns=dataset.feature_names)
+df['diabetic']=dataset.target
 
-x=torch.linspace(-3,3,20).view(-1,1)
-y=3*x+2+torch.randn(20,1)
+X=df.drop(columns='diabetic') 
+y=df['diabetic'] 
+threshold=np.median(y)
+y_binary=np.where(y>threshold,1,0)
+y=pd.Series(y_binary)
+print(y)
 
-dataset=TensorDataset(x,y)
-dl=DataLoader(dataset,batch_size=5,shuffle=True)
-
-plt.scatter(x,y)
-plt.title("The Data We Want to Learn")
+sns.pairplot(df,hue='diabetic')
 plt.show()
 
-# Random Weights
-weights=torch.randn(1,requires_grad=True)
-# bias
-bias=torch.rand(1,requires_grad=True)
+N=len(X)
+train_size=int(0.8*N)
+np.random.seed(42)
+indices=np.random.permutation(N)
+train_indicies=indices[:train_size]
+test_indicies=indices[train_size:]
 
-print(f"Random Start -> Slope: {weights.item():.2f}, Bias: {bias.item():.2f}")
+X_train=X.iloc[train_indicies]
+X_test=X.iloc[test_indicies]
+y_train=y.iloc[train_indicies]
+y_test=y.iloc[test_indicies]
 
-learning_rate=0.01
-for i in range(500):
-    for xb,yb in dl:
-        y_pred=x*weights+bias
-        loss=((y_pred-y)**2).mean()
-        loss.backward()
+weights=np.random.randn(10,1)
+bias=np.random.randn(1,1)
+lr=0.1
 
-        with torch.no_grad():
-            weights-=weights.grad*learning_rate
-            bias-=bias.grad*learning_rate
+for epoch in range(1):
+    for i in range(len(X_train)):
+        x_i=X_train.iloc[i].values.reshape(-1,1)
+        y_i=y_train.iloc[i]
 
-            weights.grad.zero_()
-            bias.grad.zero_()
-    
-    if i%50==0:
-       print(f"Epoch {i} | Loss: {loss.item():.4f} | Slope: {weights.item():.2f} | Bias: {bias.item():.2f}")
+        prediction=float(weights.T.dot(x_i)+bias)
+        error=y_i-prediction
+        
+        if prediction*y_i<=0:
+            weights=weights+error*lr*x_i
+            bias+=error*lr
 
-print(f"\nTARGET -> Slope: 3.00, Bias: 2.00")
-print(f"RESULT -> Slope: {weights.item():.2f}, Bias: {bias.item():.2f}")
+    if epoch%25==0:
+        print(f"loss: {error}")
+
+predictions=[]
+for i in range(len(X_test)):
+    prediction=float(weights.T.dot(X_test.iloc[i])+bias)
+    if prediction>=threshold:
+        predictions.append(1)
+    else:
+        predictions.append(0)
+
+y_true=y_test.values
+y_pred=np.array(predictions)
+print(y_true)
+print(predictions)
+TP=np.sum((y_pred==1)&(y_true==1))
+TN=np.sum((y_pred==0)&(y_true==0))
+FP=np.sum((y_pred==1)&(y_true==0))
+FN=np.sum((y_pred==0)&(y_true==1))
+
+conf_matrix=np.array([[TP,FP],[FN,TN]])
+print(conf_matrix)
+
+plt.imshow(conf_matrix)
+plt.colorbar()
+
+plt.xticks([0,1],["Pred+","Pred-"])
+plt.yticks([0,1],["Actual+","Actual-"])
+
+for i in range(2):
+    for j in range(2):
+        plt.text(j,i,conf_matrix[i,j],
+                ha="center", va="center", color="white")
+
+plt.xlabel("Predicted")
+plt.ylabel("Actual")
+plt.title("Confusion Matrix")
+plt.show()
